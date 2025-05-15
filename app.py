@@ -12,20 +12,25 @@ if API_KEY:
     youtube = build('youtube', 'v3', developerKey=API_KEY)
 
 st.title("📊 YouTube Shorts Trend Analyzer")
+
 channel_list = st.text_area("Enter YouTube Channel URLs (One per line):")
 
 col1, col2 = st.columns(2)
 with col1:
-    min_views = st.number_input("Minimum Views", value=300000, step=50000)
+    min_views = st.number_input("Minimum Views", value=100000, step=50000)
 with col2:
-    min_velocity = st.number_input("Min Views per Hour", value=3000, step=500)
+    st.write("")  # Layout alignment
 
-time_window_hours = st.slider("Upload Time Window (Hours)", min_value=24, max_value=72, value=48)
+time_window_hours = st.slider("Upload Time Window (Hours)", min_value=24, max_value=120, value=48)
+
+# Real-time trending filter
+trending_filter = st.toggle("🔥 Show Only Top Trending Videos (Last 24 Hours)")
 
 if st.button("Analyze Trends") and youtube:
     now = datetime.datetime.utcnow().replace(tzinfo=timezone.utc)
     published_after_dt = now - datetime.timedelta(hours=time_window_hours)
-    
+    trending_after_dt = now - datetime.timedelta(hours=24)
+
     channel_urls = channel_list.splitlines()
     results = []
 
@@ -66,16 +71,14 @@ if st.button("Analyze Trends") and youtube:
                         published_at_dt = datetime.datetime.fromisoformat(published_at_iso.replace('Z', '+00:00'))
 
                         hours_since_upload = (now - published_at_dt).total_seconds() / 3600
-                        view_velocity = view_count / hours_since_upload if hours_since_upload > 0 else 0
 
-                        if published_at_dt >= published_after_dt and view_count >= min_views and view_velocity >= min_velocity:
+                        if view_count >= min_views and published_at_dt >= published_after_dt:
                             results.append({
                                 "Title": snippet.get("title"),
                                 "Channel": snippet.get("channelTitle"),
                                 "Views": view_count,
                                 "PublishedAt": snippet.get("publishedAt"),
                                 "HoursSinceUpload": round(hours_since_upload, 1),
-                                "ViewsPerHour": int(view_velocity),
                                 "Link": f"https://www.youtube.com/shorts/{item['id']}"
                             })
 
@@ -88,10 +91,17 @@ if st.button("Analyze Trends") and youtube:
 
     if results:
         df = pd.DataFrame(results)
-        df = df.sort_values(by="ViewsPerHour", ascending=False).reset_index(drop=True)
-        st.dataframe(df)
+        df["PublishedAt_dt"] = pd.to_datetime(df["PublishedAt"])
+        
+        if trending_filter:
+            df = df[df["PublishedAt_dt"] >= trending_after_dt]
+            df = df.sort_values(by="Views", ascending=False).head(10)
+        else:
+            df = df.sort_values(by="Views", ascending=False).reset_index(drop=True)
 
-        csv = df.to_csv(index=False, encoding="utf-8-sig")
+        st.dataframe(df.drop(columns=["PublishedAt_dt"]))
+
+        csv = df.drop(columns=["PublishedAt_dt"]).to_csv(index=False, encoding="utf-8-sig")
         st.download_button(label="📥 Download CSV", data=csv, file_name="trending_shorts.csv", mime="text/csv")
     else:
         st.info("No videos matched the criteria.")
