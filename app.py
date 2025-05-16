@@ -20,7 +20,7 @@ col1, col2 = st.columns(2)
 with col1:
     min_views = st.number_input("Minimum Views", value=100000, step=50000)
 with col2:
-    st.write("")  # Layout alignment
+    st.write("")
 
 time_window_hours = st.slider("Upload Time Window (Hours)", min_value=24, max_value=120, value=48)
 trending_filter = st.toggle("🔥 Show Only Top Trending Videos (Last 24 Hours)")
@@ -34,13 +34,16 @@ if st.button("Analyze Trends") and youtube:
     results = []
 
     for idx, url in enumerate(channel_urls):
-        handle = url.strip().split("/")[-1].replace("@", "").replace("/shorts", "")
-        st.write(f"Processing channel {idx + 1}/{len(channel_urls)}: {handle}")
+        handle_or_id = url.strip().split("/")[-1].replace("/shorts", "")
+        st.write(f"Processing channel {idx + 1}/{len(channel_urls)}: {handle_or_id}")
         try:
             retries = 3
             while retries > 0:
                 try:
-                    response = youtube.channels().list(part="id", forHandle=handle).execute()
+                    if "/channel/" in url:
+                        response = youtube.channels().list(part="id", id=handle_or_id).execute()
+                    else:
+                        response = youtube.channels().list(part="id", forHandle=handle_or_id).execute()
                     break
                 except Exception as e:
                     if "quotaExceeded" in str(e):
@@ -99,7 +102,7 @@ if st.button("Analyze Trends") and youtube:
                     break
 
         except Exception as e:
-            st.warning(f"Error processing channel {handle}: {e}")
+            st.warning(f"Error processing channel {handle_or_id}: {e}")
 
     if results:
         df = pd.DataFrame(results)
