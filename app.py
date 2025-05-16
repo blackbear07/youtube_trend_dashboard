@@ -5,6 +5,7 @@ import datetime
 from datetime import timezone
 from googleapiclient.discovery import build
 from urllib.parse import urlparse
+import time
 
 API_KEY = st.text_input("Enter Your YouTube API Key", type="password")
 youtube = None
@@ -22,8 +23,6 @@ with col2:
     st.write("")  # Layout alignment
 
 time_window_hours = st.slider("Upload Time Window (Hours)", min_value=24, max_value=120, value=48)
-
-# Real-time trending filter
 trending_filter = st.toggle("🔥 Show Only Top Trending Videos (Last 24 Hours)")
 
 if st.button("Analyze Trends") and youtube:
@@ -34,15 +33,28 @@ if st.button("Analyze Trends") and youtube:
     channel_urls = channel_list.splitlines()
     results = []
 
-    for url in channel_urls:
+    for idx, url in enumerate(channel_urls):
         handle = url.strip().split("/")[-1].replace("@", "").replace("/shorts", "")
+        st.write(f"Processing channel {idx + 1}/{len(channel_urls)}: {handle}")
         try:
-            response = youtube.channels().list(part="id", forHandle=handle).execute()
+            retries = 3
+            while retries > 0:
+                try:
+                    response = youtube.channels().list(part="id", forHandle=handle).execute()
+                    break
+                except Exception as e:
+                    if "quotaExceeded" in str(e):
+                        st.warning("API Quota exceeded. Waiting for reset...")
+                        time.sleep(60)
+                        retries -= 1
+                    else:
+                        raise e
+
             cid = response["items"][0]["id"]
             playlist_id = youtube.channels().list(
                 part="contentDetails", id=cid
             ).execute()["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
-            
+
             next_page_token = None
             while True:
                 playlist_items = youtube.playlistItems().list(
@@ -92,7 +104,7 @@ if st.button("Analyze Trends") and youtube:
     if results:
         df = pd.DataFrame(results)
         df["PublishedAt_dt"] = pd.to_datetime(df["PublishedAt"])
-        
+
         if trending_filter:
             df = df[df["PublishedAt_dt"] >= trending_after_dt]
             df = df.sort_values(by="Views", ascending=False).head(10)
